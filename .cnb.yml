@@ -1,0 +1,9 @@
+$:
+  vscode:
+    - docker:
+        image: docker.cnb.cool/anyexyz/envbuild/pytorch:latest
+      runner:
+        tags: cnb:arch:amd64:gpu
+      services:
+        - vscode
+        - docker
