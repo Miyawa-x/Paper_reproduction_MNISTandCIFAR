@@ -5,6 +5,8 @@ from data_setup_buffer import get_split_mnist_loaders, MemoryBuffer
 from basic_train import train_and_evaluate
 from split_model import SimpleNet  # 输出层为2
 
+from bounds_evaluator import SupersampleDataset, calculate_mi_and_bounds
+
 def run_continual_learning(device, buffer_size=400, epochs_per_task=3):
 
     # 初始化模型 记忆
@@ -58,6 +60,14 @@ def run_continual_learning(device, buffer_size=400, epochs_per_task=3):
         final_test_loss = history['test_loss'][-1]
         generalization_gap = abs(final_test_loss - final_train_loss)
         print(f"Task {task_id} 结束 | Train Loss: {final_train_loss:.4f} | Test Loss: {final_test_loss:.4f} | 泛化差距 (Gap): {generalization_gap:.4f}")
+
+        print(f"Task {task_id} 的信息论泛化界限")
+        # 原始数据转为超样本
+        super_dataset = SupersampleDataset(raw_train_dataset)
+        super_loader = DataLoader(super_dataset, batch_size=128, shuffle=False)
+        n_samples = len(raw_train_dataset)
+        calculate_mi_and_bounds(model, super_loader, device, n=n_samples, m=buffer_size)
+        print("\n")
 
     return all_tasks_history
 
