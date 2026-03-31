@@ -116,7 +116,13 @@ def calculate_mi_and_bounds(model, super_loader, device, n, m=400):
     print(f"WEI Bound : {weighted_bound:.6f}")
     print(f"VAR Bound : {var_bound:.6f}")
     
-    return mi_delta_s
+    return {
+        'mi': mi_delta_s,
+        'sq_bound': sq_bound,
+        'bkl_bound': bkl_bound,
+        'wei_bound': weighted_bound,
+        'var_bound': var_bound
+    }
 
 
 if __name__ == '__main__':

@@ -52,21 +52,22 @@ def run_continual_learning(device, buffer_size=400, epochs_per_task=3):
             epochs=epochs_per_task
         )
         
-        buffer.update_buffer(raw_train_dataset,task_id)
-        
-        # 日志
-        all_tasks_history.append(history)
+        # 算出实测的 Gap
         final_train_loss = history['train_loss'][-1]
         final_test_loss = history['test_loss'][-1]
         generalization_gap = abs(final_test_loss - final_train_loss)
         print(f"Task {task_id} 结束 | Train Loss: {final_train_loss:.4f} | Test Loss: {final_test_loss:.4f} | 泛化差距 (Gap): {generalization_gap:.4f}")
 
-        print(f"Task {task_id} 的信息论泛化界限")
-        # 原始数据转为超样本
+        print(f"--- 正在测算 Task {task_id} 的信息论泛化界限 ---")
         super_dataset = SupersampleDataset(raw_train_dataset)
         super_loader = DataLoader(super_dataset, batch_size=128, shuffle=False)
         n_samples = len(raw_train_dataset)
-        calculate_mi_and_bounds(model, super_loader, device, n=n_samples, m=buffer_size)
+
+        bounds_result = calculate_mi_and_bounds(model, super_loader, device, n=n_samples, m=buffer_size)
+        bounds_result['gap'] = generalization_gap
+        
+        # 存入历史记录
+        all_tasks_history.append(bounds_result)
         print("\n")
 
     return all_tasks_history
