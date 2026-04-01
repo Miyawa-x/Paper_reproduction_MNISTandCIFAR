@@ -134,10 +134,10 @@ def run_CL_for_m(device, m_size, n_size=750):
         final_wei += b['wei_bound']
         final_var += b['var_bound']
 
-        final_sq /= 5
-        final_kl /= 5
-        final_wei /= 5
-        final_var /= 5
+    final_sq /= 5
+    final_kl /= 5
+    final_wei /= 5
+    final_var /= 5
 
     return {
         'gap': true_cl_gap,
