@@ -74,10 +74,10 @@ if __name__ == '__main__':
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("启动泛化界限验证实验")
     
-    # 1. 跑一次 Sole 拿个基线就行
+    # 跑一次 Sole 
     sole_baseline = run_sole_baseline(device)
     
-    # 2. 连续跑 10 次 Split-MNIST
+    # 连续跑 10 次 Split-MNIST
     num_runs = 10
     all_runs_results = []
     
@@ -86,17 +86,16 @@ if __name__ == '__main__':
         # 每次都会重新初始化模型和 Buffer
         results = run_continual_learning(device, buffer_size=400, epochs_per_task=3)
         all_runs_results.append(results)
-    
-    # 3. 对 10 次结果在每个 Task 的维度上求平均
+
     print("\n正在计算数学期望...")
     avg_results = []
     for task_idx in range(5):
         task_dict = {}
-        # 把所有轮次中，同一个 task_idx 的各项指标抽出来求平均
+        # 各项指标抽出来求平均
         for key in ['true_01_gap', 'sq_bound', 'bkl_bound', 'wei_bound', 'var_bound', 'global_acc']:
             task_dict[key] = np.mean([run[task_idx][key] for run in all_runs_results])
         avg_results.append(task_dict)
         
-    # 4. 绘制终极图表
+    # 绘制图表
     print("正在生成期望分析图表...")
     plot_core_results(avg_results, sole_final_acc=sole_baseline, num_runs=num_runs)
