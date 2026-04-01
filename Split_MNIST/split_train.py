@@ -17,14 +17,14 @@ def run_continual_learning(device, buffer_size=400, epochs_per_task=3):
     all_tasks_history = []
 
     for task_id in range(5):
-        print(f"\n{'='*20} 正在开始 Task {task_id} {'='*20}")
+        print(f"\n正在开始 Task {task_id}")
         train_loader, test_loader, raw_train_dataset = get_split_mnist_loaders(task_id)
         super_dataset = SupersampleDataset(raw_train_dataset)
         
-        # 2. 模型只能拿超样本中分配为 Train 的数据去训练
+        # 模型只拿超样本中分配为 Train 的数据去训练
         new_data = super_dataset.train_data
         new_labels = super_dataset.labels.long()
-        # ==========================================================
+
 
         old_data, old_labels = buffer.get_buffer_data()
         
@@ -68,6 +68,7 @@ def run_continual_learning(device, buffer_size=400, epochs_per_task=3):
 
         bounds_result = calculate_mi_and_bounds(model, super_loader, device, n=n_samples, m=buffer_size)
         bounds_result['gap'] = generalization_gap
+        bounds_result.update(history)
         
         print(f"测算 Task 0 到 Task {task_id} 的平均准确率")
         total_correct = 0

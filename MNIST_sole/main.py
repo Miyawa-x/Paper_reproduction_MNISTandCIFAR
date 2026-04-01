@@ -47,7 +47,7 @@ def main():
                 correct += (predicted == labels).sum().item()
 
 
-        print(f'---> Epoch {epoch+1} Test Accuracy: {100 * correct / total:.2f}%\n')
+        print(f'Epoch {epoch+1} Test Accuracy: {100 * correct / total:.2f}%\n')
 
 if __name__ == '__main__':
     main()
