@@ -66,6 +66,32 @@ def run_continual_learning(device, buffer_size=400, epochs_per_task=3):
         bounds_result = calculate_mi_and_bounds(model, super_loader, device, n=n_samples, m=buffer_size)
         bounds_result['gap'] = generalization_gap
         
+        print(f"测算 Task 0 到 Task {task_id} 的平均准确率")
+        total_correct = 0
+        total_samples = 0
+        
+        model.eval()
+        with torch.no_grad():
+            # 遍历迄今为止学过的所有历史任务
+            for i in range(task_id + 1):
+                # 重新获取历史任务的测试集
+                _, past_test_loader, _ = get_split_mnist_loaders(task_id=i, batch_size=128)
+                
+                for images, labels in past_test_loader:
+                    images, labels = images.to(device), labels.to(device)
+                    outputs = model(images)
+                    _, predicted = torch.max(outputs, 1)
+                    
+                    total_samples += labels.size(0)
+                    total_correct += (predicted == labels).sum().item()
+                    
+        global_acc = 100.0 * total_correct / total_samples
+        print(f"全局平均准确率: {global_acc:.2f}%\n")
+        
+        # 大联考
+        bounds_result['global_acc'] = global_acc
+
+        bounds_result.update(history)
         # 存入历史记录
         all_tasks_history.append(bounds_result)
         print("\n")

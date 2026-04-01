@@ -121,7 +121,8 @@ def calculate_mi_and_bounds(model, super_loader, device, n, m=400):
         'sq_bound': sq_bound,
         'bkl_bound': bkl_bound,
         'wei_bound': weighted_bound,
-        'var_bound': var_bound
+        'var_bound': var_bound,
+        'true_01_gap': abs(mean_d)  
     }
 
 

@@ -29,14 +29,14 @@ def plot_core_results(split_results, sole_final_acc):
     tasks = range(1, 6)
     
     # 提取信息论与误差数据
-    gaps = [res['gap'] for res in split_results]
+    gaps = [res['true_01_gap'] for res in split_results]
     sq_bounds = [res['sq_bound'] for res in split_results]
     bkl_bounds = [res['bkl_bound'] for res in split_results]
     wei_bounds = [res['wei_bound'] for res in split_results]
     var_bounds = [res['var_bound'] for res in split_results]
     
     # 提取准确率数据
-    split_accs = [res['test_acc'][-1] for res in split_results]
+    split_accs = [res['global_acc'] for res in split_results]
 
     # 图 1：理论界限与经验误差
     plt.figure(figsize=(10, 6))
