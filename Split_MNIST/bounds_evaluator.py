@@ -43,7 +43,7 @@ class SupersampleDataset(Dataset):
 
     def __getitem__(self, idx):
         # 每次吐出一组：训练图，测试图，标签，硬币结果 S
-        return self.train_data[idx], self.test_data[idx], self.labels[idx], self.S[idx]
+        return self.all_pairs[idx, 0], self.all_pairs[idx, 1], self.labels[idx], self.S[idx]
 
 def calculate_mi_and_bounds(model, super_loader, device, n, m=400):
     
@@ -53,23 +53,32 @@ def calculate_mi_and_bounds(model, super_loader, device, n, m=400):
     # \Delta 取值域 {-1, 0, 1}, S 取值域 {0, 1}
     joint_counts = {} 
     total_pairs = 0
+    mean_gap = 0.0
     
     with torch.no_grad():
-        for train_img, test_img, labels, s in super_loader:
-            train_img, test_img, labels = train_img.to(device), test_img.to(device), labels.to(device)
+        # 接收 z0 和 z1
+        for z0_img, z1_img, labels, s in super_loader:
+            z0_img, z1_img, labels = z0_img.to(device), z1_img.to(device), labels.to(device)
             
-            train_out = model(train_img)
-            test_out = model(test_img)
+            z0_out = model(z0_img)
+            z1_out = model(z1_img)
 
-            _,train_pred = torch.max(train_out,1)
-            _,test_pred = torch.max(test_out,1)
+            _, z0_pred = torch.max(z0_out, 1)
+            _, z1_pred = torch.max(z1_out, 1)
 
-            train_loss = (train_pred != labels).float()
-            test_loss = (test_pred != labels).float()
+            loss_0 = (z0_pred != labels).float()
+            loss_1 = (z1_pred != labels).float()
             
-            delta = test_loss - train_loss
+            # 绝对位置相减
+            delta = loss_1 - loss_0
             
-            # 将 (\Delta, S) 存入字典进行频率统计
+            # 如果 S=0，Unseen 是 loss_1，Gap = loss_1 - loss_0 = delta
+            # 如果 S=1，Unseen 是 loss_0，Gap = loss_0 - loss_1 = -delta
+            s_device = s.to(device)
+            unseen_minus_seen = torch.where(s_device == 0, delta, -delta)
+            mean_gap += unseen_minus_seen.sum().item()
+            
+            # 频率统计
             for d, s_val in zip(delta.cpu().numpy(), s.numpy()):
                 key = (d, s_val)
                 joint_counts[key] = joint_counts.get(key, 0) + 1
@@ -115,6 +124,8 @@ def calculate_mi_and_bounds(model, super_loader, device, n, m=400):
     print(f"KL Bound  : {bkl_bound:.6f}")
     print(f"WEI Bound : {weighted_bound:.6f}")
     print(f"VAR Bound : {var_bound:.6f}")
+
+    true_01_gap = mean_gap / total_pairs
     
     return {
         'mi': mi_delta_s,
@@ -122,7 +133,7 @@ def calculate_mi_and_bounds(model, super_loader, device, n, m=400):
         'bkl_bound': bkl_bound,
         'wei_bound': weighted_bound,
         'var_bound': var_bound,
-        'true_01_gap': abs(mean_d)  
+        'true_01_gap': true_01_gap  
     }
 
 

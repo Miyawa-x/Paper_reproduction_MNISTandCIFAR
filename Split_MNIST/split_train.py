@@ -19,18 +19,19 @@ def run_continual_learning(device, buffer_size=400, epochs_per_task=3):
     for task_id in range(5):
         print(f"\n{'='*20} 正在开始 Task {task_id} {'='*20}")
         train_loader, test_loader, raw_train_dataset = get_split_mnist_loaders(task_id)
-        old_data,old_labels = buffer.get_buffer_data()
-        combined_data = None
-        combined_labels = None
+        super_dataset = SupersampleDataset(raw_train_dataset)
         
-        # 新任务Tensor
-        new_data = raw_train_dataset.tensors[0]
-        new_labels = raw_train_dataset.tensors[1]
+        # 2. 模型只能拿超样本中分配为 Train 的数据去训练
+        new_data = super_dataset.train_data
+        new_labels = super_dataset.labels.long()
+        # ==========================================================
 
+        old_data, old_labels = buffer.get_buffer_data()
+        
         # 混合新旧数据
         if old_data is not None:
-            combined_data = torch.cat([new_data,old_data],dim = 0)
-            combined_labels = torch.cat([new_labels,old_labels],dim = 0)
+            combined_data = torch.cat([new_data, old_data], dim=0)
+            combined_labels = torch.cat([new_labels, old_labels], dim=0)
         else:
             combined_data = new_data
             combined_labels = new_labels
@@ -39,7 +40,7 @@ def run_continual_learning(device, buffer_size=400, epochs_per_task=3):
         if old_data is not None:
             print(f" | 旧数据: {len(old_data)} 条")
         else:
-            print() 
+            print()
 
         combined_dataset = TensorDataset(combined_data, combined_labels)
         combined_loader = DataLoader(combined_dataset, batch_size=64, shuffle=True)
@@ -52,16 +53,18 @@ def run_continual_learning(device, buffer_size=400, epochs_per_task=3):
             epochs=epochs_per_task
         )
         
+        seen_dataset = TensorDataset(new_data, new_labels)
+        buffer.update_buffer(seen_dataset, task_id)
+
         # 算出实测的 Gap
         final_train_loss = history['train_loss'][-1]
         final_test_loss = history['test_loss'][-1]
         generalization_gap = abs(final_test_loss - final_train_loss)
         print(f"Task {task_id} 结束 | Train Loss: {final_train_loss:.4f} | Test Loss: {final_test_loss:.4f} | 泛化差距 (Gap): {generalization_gap:.4f}")
 
-        print(f"--- 正在测算 Task {task_id} 的信息论泛化界限 ---")
-        super_dataset = SupersampleDataset(raw_train_dataset)
+        print(f"正在测算 Task {task_id} 的泛化界限")
         super_loader = DataLoader(super_dataset, batch_size=128, shuffle=False)
-        n_samples = len(raw_train_dataset)
+        n_samples = len(new_data)
 
         bounds_result = calculate_mi_and_bounds(model, super_loader, device, n=n_samples, m=buffer_size)
         bounds_result['gap'] = generalization_gap
