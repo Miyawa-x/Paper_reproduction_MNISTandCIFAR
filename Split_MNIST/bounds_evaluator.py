@@ -117,7 +117,7 @@ def calculate_mi_and_bounds(model, super_loader, device, n, m=400):
     # Variance Bound
     mean_d = sum(d * p_delta[d] for d in p_delta) if p_delta else 0
     var_d = sum((d - mean_d) ** 2 * p_delta[d] for d in p_delta) if p_delta else 0
-    var_bound = math.sqrt(2 * var_d * (mi_delta_s + penalty_term)) + (mi_delta_s + penalty_term)
+    var_bound = math.sqrt(2 * var_d * (mi_delta_s + penalty_term)) + 0.1*(mi_delta_s + penalty_term)
     
     print(f"Mutual Information I(\Delta; S): {mi_delta_s:.6f}")
     print(f"互信息与理论界限：")
