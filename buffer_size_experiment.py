@@ -121,6 +121,8 @@ def run_CL_for_m(device, m_size, n_size=750):
 
     # 在最终的 model 上，回溯测算所有 5 个任务的互信息
     for task_i in range(5):
+
+        full_super = supersample_memory_bank[task_i]
         # 提取快照
         if task_i < 4:
             eval_size = min(n_tilde, len(full_super))

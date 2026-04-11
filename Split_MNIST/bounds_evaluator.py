@@ -103,19 +103,20 @@ def calculate_mi_and_bounds(model, super_loader, device, n, m=400):
             if pd > 0 and ps > 0 and p_joint > 0:
                 mi_delta_s += p_joint * math.log2(p_joint / (pd * ps))
 
-    sq_bound = math.sqrt((2 * mi_delta_s))
+    sq_bound = math.sqrt((2 * mi_delta_s) / n) if n > 0 else 0
 
     # Binary KL
-    bkl_bound = math.sqrt((2 * mi_delta_s * math.log(2)))
+    bkl_bound = math.sqrt((2 * mi_delta_s * math.log(2)) / n) if n > 0 else 0
 
     # Weighted Bound
     C1, C2 = 0.1, 0.3
-    weighted_bound = C1 * mi_delta_s + C2 * math.sqrt(mi_delta_s)
+    weighted_bound = C1 * (mi_delta_s / n) + C2 * math.sqrt(mi_delta_s / n) if n > 0 else 0
 
     # Variance Bound
     mean_d = sum(d * p_delta[d] for d in p_delta) if p_delta else 0
     var_d = sum((d - mean_d) ** 2 * p_delta[d] for d in p_delta) if p_delta else 0
-    var_bound = math.sqrt((var_d * mi_delta_s)) if m > 0 else 0
+    C_var = 1.0 # O(1/n) 补偿
+    var_bound = math.sqrt((2 * var_d * mi_delta_s) / n) + C_var * (mi_delta_s / n) if n > 0 else 0
     
     print(f"Mutual Information I(\Delta; S): {mi_delta_s:.6f}")
     print(f"互信息与理论界限：")
