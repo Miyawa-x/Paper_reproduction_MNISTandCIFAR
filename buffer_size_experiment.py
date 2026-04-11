@@ -32,7 +32,7 @@ def init_weights(m):
     elif isinstance(m, torch.nn.Linear):
         torch.nn.init.normal_(m.weight, 0, 0.01)
         torch.nn.init.constant_(m.bias, 0)
-
+        
 def run_CL_for_m(device, m_size, n_size=750):
     model = SimpleNet().to(device)
     model.apply(init_weights)
@@ -40,6 +40,9 @@ def run_CL_for_m(device, m_size, n_size=750):
     
     all_test_loaders = []
     task_bounds_tracking = []
+    
+    # 建立全局快照字典
+    supersample_memory_bank = {}
     
     for task_id in range(5):
         _, test_loader, raw_train_dataset = get_split_mnist_loaders(task_id, batch_size=128)
@@ -52,6 +55,10 @@ def run_CL_for_m(device, m_size, n_size=750):
         trunc_dataset = TensorDataset(trunc_data, trunc_labels)
         
         super_dataset = SupersampleDataset(trunc_dataset)
+        
+        # 封存状态
+        supersample_memory_bank[task_id] = super_dataset
+        
         new_data = super_dataset.train_data
         new_labels = super_dataset.labels.long()
         
@@ -114,15 +121,14 @@ def run_CL_for_m(device, m_size, n_size=750):
 
     # 在最终的 model 上，回溯测算所有 5 个任务的互信息
     for task_i in range(5):
-        # 重新获取该任务的全量原始数据并构造超样本
-        _, _, raw_train_dataset = get_split_mnist_loaders(task_i, batch_size=128)
-        full_super = SupersampleDataset(raw_train_dataset)
+        # 提取快照
+        full_super = supersample_memory_bank[task_i]
 
         # 旧任务评估为 n_tilde，当前任务为 n_size
         eval_size = n_tilde if task_i < 4 else n_size
 
-        # 随机截取对应数量的超样本对 
-        indices = torch.randperm(len(full_super))[:eval_size]
+        # 固定顺序截取，不使用随机打乱
+        indices = torch.arange(eval_size)
         subset_super = torch.utils.data.Subset(full_super, indices)
         super_loader = DataLoader(subset_super, batch_size=128, shuffle=False)
 
@@ -146,6 +152,7 @@ def run_CL_for_m(device, m_size, n_size=750):
         'wei': final_wei,
         'var': final_var
     }
+
 def plot_paper_fig1c(m_values, all_results):
     plt.figure(figsize=(8, 6))
     
