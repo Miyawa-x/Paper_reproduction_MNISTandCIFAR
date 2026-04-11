@@ -32,7 +32,7 @@ def init_weights(m):
     elif isinstance(m, torch.nn.Linear):
         torch.nn.init.normal_(m.weight, 0, 0.01)
         torch.nn.init.constant_(m.bias, 0)
-        
+
 def run_CL_for_m(device, m_size, n_size=750):
     model = SimpleNet().to(device)
     model.apply(init_weights)
@@ -122,7 +122,10 @@ def run_CL_for_m(device, m_size, n_size=750):
     # 在最终的 model 上，回溯测算所有 5 个任务的互信息
     for task_i in range(5):
         # 提取快照
-        full_super = supersample_memory_bank[task_i]
+        if task_i < 4:
+            eval_size = min(n_tilde, len(full_super))
+        else:
+            eval_size = len(full_super)
 
         # 旧任务评估为 n_tilde，当前任务为 n_size
         eval_size = n_tilde if task_i < 4 else n_size
@@ -181,7 +184,7 @@ def plot_paper_fig1c(m_values, all_results):
     
     plt.legend(fontsize=12, loc='upper right')
     plt.grid(True, alpha=0.3)
-    plt.savefig('reproduced_fig1c.png', dpi=300, bbox_inches='tight')
+    plt.savefig('reproduced_fig1c_fix_S&01.png', dpi=300, bbox_inches='tight')
     plt.close()
     print("\nFig 1(c) 复现已生成: ")
 

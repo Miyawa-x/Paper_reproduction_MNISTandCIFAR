@@ -49,7 +49,7 @@ def plot_core_results(split_results, sole_final_acc, num_runs):
     plt.xticks(tasks)
     plt.legend()
     plt.grid(True, alpha=0.3)
-    plt.savefig('fig1_generalization_bounds_avg.png', dpi=300, bbox_inches='tight')
+    plt.savefig('fig1_generalization_bounds_avg_fix_S&01.png', dpi=300, bbox_inches='tight')
     plt.close()
 
     # 图 2：准确率演变与全局基准线
@@ -65,7 +65,7 @@ def plot_core_results(split_results, sole_final_acc, num_runs):
     plt.ylim(min(min(split_accs) - 5, 80), 105) 
     plt.legend()
     plt.grid(True, alpha=0.3)
-    plt.savefig('fig2_accuracy_evolution_avg.png', dpi=300, bbox_inches='tight')
+    plt.savefig('fig2_accuracy_evolution_avg_fix_S&01.png', dpi=300, bbox_inches='tight')
     plt.close()
 
     print("\n实验图表已保存")

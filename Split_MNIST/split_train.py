@@ -60,29 +60,67 @@ def run_continual_learning(device, buffer_size=400, epochs_per_task=3):
         seen_dataset = TensorDataset(new_data, new_labels)
         buffer.update_buffer(seen_dataset, task_id)
 
-        # 算出实测的 Gap
-        final_train_loss = history['train_loss'][-1]
-        final_test_loss = history['test_loss'][-1]
-        generalization_gap = abs(final_test_loss - final_train_loss)
-        print(f"Task {task_id} 结束 | Train Loss: {final_train_loss:.4f} | Test Loss: {final_test_loss:.4f} | 泛化差距 (Gap): {generalization_gap:.4f}")
-
-        # 截止到当前的全局平均理论界限
-        print(f"正在测算 Task 0 到 Task {task_id} 的全局理论界限")
+        # 全局 0-1 泛化误差
+        print(f"正在测算 Task 0 到 Task {task_id} 的全局 0-1 泛化误差...")
         
+        # Population Risk
+        pop_loss, pop_total = 0, 0
+        model.eval()
+        with torch.no_grad():
+            for i in range(task_id + 1):
+                _, past_test_loader, _ = get_split_mnist_loaders(task_id=i, batch_size=128)
+                for imgs, lbls in past_test_loader:
+                    imgs, lbls = imgs.to(device), lbls.to(device)
+                    preds = torch.max(model(imgs), 1)[1]
+                    pop_loss += (preds != lbls).sum().item()
+                    pop_total += lbls.size(0)
+        pop_risk = pop_loss / pop_total
+        global_acc = 100.0 * (pop_total - pop_loss) / pop_total
+
+        # Empirical Risk
+        emp_loss, emp_total = 0, 0
+        with torch.no_grad():
+            # Buffer 里的数据
+            buf_imgs, buf_lbls = buffer.get_buffer_data()
+            if buf_imgs is not None:
+                buf_dataset = TensorDataset(buf_imgs, buf_lbls)
+                buf_loader = DataLoader(buf_dataset, batch_size=128)
+                for imgs, lbls in buf_loader:
+                    imgs, lbls = imgs.to(device), lbls.to(device)
+                    preds = torch.max(model(imgs), 1)[1]
+                    emp_loss += (preds != lbls).sum().item()
+                    emp_total += lbls.size(0)
+            
+            # 当前 train_data
+            curr_dataset = TensorDataset(new_data, new_labels)
+            curr_loader = DataLoader(curr_dataset, batch_size=128)
+            for imgs, lbls in curr_loader:
+                imgs, lbls = imgs.to(device), lbls.to(device)
+                preds = torch.max(model(imgs), 1)[1]
+                emp_loss += (preds != lbls).sum().item()
+                emp_total += lbls.size(0)
+                
+        emp_risk = emp_loss / emp_total if emp_total > 0 else 0
+        
+        # 真实loss
+        true_cl_gap = abs(pop_risk - emp_risk)
+        print(f"-> 全局测试误差: {pop_risk:.4f} | 全局经验误差: {emp_risk:.4f} | 真实 Gap: {true_cl_gap:.4f}")
+
+        # 测算全局理论界限 & 越界修复
+        print(f"正在测算 Task 0 到 Task {task_id} 的全局理论界限...")
         sum_mi, sum_sq, sum_bkl, sum_wei, sum_var = 0, 0, 0, 0, 0
         
-        model.eval()
-        # 遍历任务重新在当前model上提取 Delta
         for eval_id in range(task_id + 1):
             archived_dataset = supersample_memory_bank[eval_id]
             
-            # 最新任务的分母大，旧任务压进 Buffer 后分母小
             if eval_id == task_id:
-                eval_size = len(new_data)
+                # 取全量对
+                eval_size = len(archived_dataset)
             else:
-                eval_size = max(buffer_size // (task_id + 1), 1)
+                target_size = max(buffer_size // (task_id + 1), 1)
+                eval_size = min(target_size, len(archived_dataset))
             
-            # 读取配对好的数据
+            # 截取快照
             indices = torch.arange(eval_size)
             subset_super = torch.utils.data.Subset(archived_dataset, indices)
             super_loader = DataLoader(subset_super, batch_size=128, shuffle=False)
@@ -95,7 +133,7 @@ def run_continual_learning(device, buffer_size=400, epochs_per_task=3):
             sum_wei += b['wei_bound']
             sum_var += b['var_bound']
         
-        # 除以 T 求算术平均
+        # 算术平均
         num_tasks_seen = task_id + 1
         bounds_result = {
             'mi': sum_mi / num_tasks_seen,
@@ -103,32 +141,11 @@ def run_continual_learning(device, buffer_size=400, epochs_per_task=3):
             'bkl_bound': sum_bkl / num_tasks_seen,
             'wei_bound': sum_wei / num_tasks_seen,
             'var_bound': sum_var / num_tasks_seen,
+            'true_01_gap': true_cl_gap,   
+            'global_acc': global_acc      
         }
-        bounds_result['gap'] = generalization_gap
+        
         bounds_result.update(history)
-        
-        print(f"测算 Task 0 到 Task {task_id} 的平均准确率")
-        total_correct = 0
-        total_samples = 0
-        
-        with torch.no_grad():
-            for i in range(task_id + 1):
-                _, past_test_loader, _ = get_split_mnist_loaders(task_id=i, batch_size=128)
-                
-                for images, labels in past_test_loader:
-                    images, labels = images.to(device), labels.to(device)
-                    outputs = model(images)
-                    _, predicted = torch.max(outputs, 1)
-                    
-                    total_samples += labels.size(0)
-                    total_correct += (predicted == labels).sum().item()
-                    
-        global_acc = 100.0 * total_correct / total_samples
-        print(f"全局平均准确率: {global_acc:.2f}%\n")
-        
-        bounds_result['global_acc'] = global_acc
-        bounds_result['true_01_gap'] = generalization_gap
-
         all_tasks_history.append(bounds_result)
         print("\n")
 
