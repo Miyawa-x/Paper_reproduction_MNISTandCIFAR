@@ -78,59 +78,75 @@ def run_CL_for_m(device, m_size, n_size=750):
         seen_dataset = TensorDataset(new_data, new_labels)
         buffer.update_buffer(seen_dataset, task_id)
         
-    # 评估阶段
+    
     model.eval()
+    num_tasks = 5
 
-    pop_loss, pop_total = 0, 0
+    # Population Risk 
+    pop_risk_sum = 0.0
     with torch.no_grad():
         for loader in all_test_loaders:
+            task_loss, task_total = 0, 0
             for imgs, lbls in loader:
                 imgs, lbls = imgs.to(device), lbls.to(device)
                 preds = torch.max(model(imgs), 1)[1]
-                pop_loss += (preds != lbls).sum().item()
-                pop_total += lbls.size(0)
-    pop_risk = pop_loss / pop_total
+                task_loss += (preds != lbls).sum().item()
+                task_total += lbls.size(0)
+            pop_risk_sum += (task_loss / task_total) # 算出单任务 Error 后直接累加！
     
-    emp_loss, emp_total = 0, 0
-    buf_imgs, buf_lbls = buffer.get_buffer_data()
+    # Empirical Risk
+    emp_risk_sum = 0.0
     with torch.no_grad():
+        # 累加旧任务 
+        buf_imgs, buf_lbls = buffer.get_buffer_data()
         if buf_imgs is not None:
-            buf_dataset = TensorDataset(buf_imgs, buf_lbls)
-            buf_loader = DataLoader(buf_dataset, batch_size=128)
-            for imgs, lbls in buf_loader:
-                imgs, lbls = imgs.to(device), lbls.to(device)
-                preds = torch.max(model(imgs), 1)[1]
-                emp_loss += (preds != lbls).sum().item()
-                emp_total += lbls.size(0)
+            # 严格按任务切分 Buffer 进行独立评估，防止旧任务被稀释
+            samples_per_task = buffer.max_size // num_tasks
+            for i in range(4): # 前 4 个是旧任务
+                start_idx = i * samples_per_task
+                end_idx = (i + 1) * samples_per_task
+                task_buf_imgs = buf_imgs[start_idx:end_idx]
+                task_buf_lbls = buf_lbls[start_idx:end_idx]
+                
+                if len(task_buf_imgs) > 0:
+                    buf_dataset = TensorDataset(task_buf_imgs, task_buf_lbls)
+                    buf_loader = DataLoader(buf_dataset, batch_size=128)
+                    task_loss, task_total = 0, 0
+                    for imgs, lbls in buf_loader:
+                        imgs, lbls = imgs.to(device), lbls.to(device)
+                        preds = torch.max(model(imgs), 1)[1]
+                        task_loss += (preds != lbls).sum().item()
+                        task_total += lbls.size(0)
+                    emp_risk_sum += (task_loss / task_total) # 算出单任务 Error 后直接累加！
         
+        # 累加当前任务 (New Data)
         curr_dataset = TensorDataset(new_data, new_labels)
         curr_loader = DataLoader(curr_dataset, batch_size=128)
+        task_loss, task_total = 0, 0
         for imgs, lbls in curr_loader:
             imgs, lbls = imgs.to(device), lbls.to(device)
             preds = torch.max(model(imgs), 1)[1]
-            emp_loss += (preds != lbls).sum().item()
-            emp_total += lbls.size(0)
-            
-    emp_risk = emp_loss / emp_total
-    true_cl_gap = abs(pop_risk - emp_risk)
+            task_loss += (preds != lbls).sum().item()
+            task_total += lbls.size(0)
+        emp_risk_sum += (task_loss / task_total)
+
+    # Macro-Average
+    true_cl_gap = abs(pop_risk_sum - emp_risk_sum) / num_tasks
+
+    # 初始化界限变量
+    final_sq, final_kl, final_wei, final_var = 0.0, 0.0, 0.0, 0.0
     
-    final_sq, final_kl, final_wei, final_var = 0, 0, 0, 0
-    
-    # 旧任务信息量
+    # 评估截断大小
     n_tilde = max(m_size // 4, 1) 
 
-    # 在最终的 model 上，回溯测算所有 5 个任务的互信息
+    # 理论界限同样进行宏观平均
     for task_i in range(5):
-
         full_super = supersample_memory_bank[task_i]
         # 提取快照
         if task_i < 4:
             eval_size = min(n_tilde, len(full_super))
         else:
             eval_size = len(full_super)
-
-        # 旧任务评估为 n_tilde，当前任务为 n_size
-        eval_size = n_tilde if task_i < 4 else n_size
 
         # 固定顺序截取，不使用随机打乱
         indices = torch.arange(eval_size)
@@ -145,10 +161,11 @@ def run_CL_for_m(device, m_size, n_size=750):
         final_wei += b['wei_bound']
         final_var += b['var_bound']
 
-    final_sq /= 5
-    final_kl /= 5
-    final_wei /= 5
-    final_var /= 5
+    # 同步除以任务数
+    final_sq /= num_tasks
+    final_kl /= num_tasks
+    final_wei /= num_tasks
+    final_var /= num_tasks
 
     return {
         'gap': true_cl_gap,

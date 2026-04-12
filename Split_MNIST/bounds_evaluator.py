@@ -103,16 +103,19 @@ def calculate_mi_and_bounds(model, super_loader, device, n, m=400):
             if pd > 0 and ps > 0 and p_joint > 0:
                 mi_delta_s += p_joint * math.log2(p_joint / (pd * ps))
 
-    penalty_term = math.log(20.0) / n
+    #penalty_term = math.log(20.0) / n
+    penalty_term = 0
 
     sq_bound = math.sqrt((2 * mi_delta_s+ + penalty_term))
 
     # Binary KL
     bkl_bound = math.sqrt((2 * mi_delta_s * math.log(2) + penalty_term))
 
+    true_01_gap = mean_gap / total_pairs if total_pairs > 0 else 0.0
+
     # Weighted Bound
     C1, C2 = 0.1, 0.3
-    weighted_bound = C1 * (mi_delta_s + penalty_term) + C2 * math.sqrt(mi_delta_s + penalty_term)
+    weighted_bound = C1 * true_01_gap + ((mi_delta_s + penalty_term) / C2)
 
     # Variance Bound
     mean_d = sum(d * p_delta[d] for d in p_delta) if p_delta else 0

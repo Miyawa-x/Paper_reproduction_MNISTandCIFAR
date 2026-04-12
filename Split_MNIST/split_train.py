@@ -62,50 +62,67 @@ def run_continual_learning(device, buffer_size=400, epochs_per_task=3):
 
         # 全局 0-1 泛化误差
         print(f"正在测算 Task 0 到 Task {task_id} 的全局 0-1 泛化误差...")
+        num_tasks_seen = task_id + 1
         
-        # Population Risk
-        pop_loss, pop_total = 0, 0
+        # Population Risk 
+        pop_risk_sum = 0.0
         model.eval()
         with torch.no_grad():
-            for i in range(task_id + 1):
+            for i in range(num_tasks_seen):
                 _, past_test_loader, _ = get_split_mnist_loaders(task_id=i, batch_size=128)
+                task_loss, task_total = 0, 0
                 for imgs, lbls in past_test_loader:
                     imgs, lbls = imgs.to(device), lbls.to(device)
                     preds = torch.max(model(imgs), 1)[1]
-                    pop_loss += (preds != lbls).sum().item()
-                    pop_total += lbls.size(0)
-        pop_risk = pop_loss / pop_total
-        global_acc = 100.0 * (pop_total - pop_loss) / pop_total
+                    task_loss += (preds != lbls).sum().item()
+                    task_total += lbls.size(0)
+                pop_risk_sum += (task_loss / task_total)
+                
+        pop_risk = pop_risk_sum / num_tasks_seen
+        global_acc = 100.0 * (1.0 - pop_risk) 
 
-        # Empirical Risk
-        emp_loss, emp_total = 0, 0
+        # Empirical Risk 
+        emp_risk_sum = 0.0
         with torch.no_grad():
-            # Buffer 里的数据
+            # 累加旧任务
             buf_imgs, buf_lbls = buffer.get_buffer_data()
             if buf_imgs is not None:
-                buf_dataset = TensorDataset(buf_imgs, buf_lbls)
-                buf_loader = DataLoader(buf_dataset, batch_size=128)
-                for imgs, lbls in buf_loader:
-                    imgs, lbls = imgs.to(device), lbls.to(device)
-                    preds = torch.max(model(imgs), 1)[1]
-                    emp_loss += (preds != lbls).sum().item()
-                    emp_total += lbls.size(0)
+                # 必须按旧任务分别计算 (这里我们做一个精细的操作：按照 Task Size 划分 Buffer)
+                # 因为 Buffer 是均匀采样的，我们可以简单地切分
+                samples_per_task = buffer.max_size // num_tasks_seen
+                for i in range(task_id):
+                    start_idx = i * samples_per_task
+                    end_idx = (i + 1) * samples_per_task
+                    task_buf_imgs = buf_imgs[start_idx:end_idx]
+                    task_buf_lbls = buf_lbls[start_idx:end_idx]
+                    
+                    if len(task_buf_imgs) > 0:
+                        buf_dataset = TensorDataset(task_buf_imgs, task_buf_lbls)
+                        buf_loader = DataLoader(buf_dataset, batch_size=128)
+                        task_loss, task_total = 0, 0
+                        for imgs, lbls in buf_loader:
+                            imgs, lbls = imgs.to(device), lbls.to(device)
+                            preds = torch.max(model(imgs), 1)[1]
+                            task_loss += (preds != lbls).sum().item()
+                            task_total += lbls.size(0)
+                        emp_risk_sum += (task_loss / task_total)
             
-            # 当前 train_data
+            # 累加当前新任务
             curr_dataset = TensorDataset(new_data, new_labels)
             curr_loader = DataLoader(curr_dataset, batch_size=128)
+            task_loss, task_total = 0, 0
             for imgs, lbls in curr_loader:
                 imgs, lbls = imgs.to(device), lbls.to(device)
                 preds = torch.max(model(imgs), 1)[1]
-                emp_loss += (preds != lbls).sum().item()
-                emp_total += lbls.size(0)
+                task_loss += (preds != lbls).sum().item()
+                task_total += lbls.size(0)
+            emp_risk_sum += (task_loss / task_total)
                 
-        emp_risk = emp_loss / emp_total if emp_total > 0 else 0
+        emp_risk = emp_risk_sum / num_tasks_seen
         
-        # 真实loss
+        # 真实宏观 Gap
         true_cl_gap = abs(pop_risk - emp_risk)
-        print(f"-> 全局测试误差: {pop_risk:.4f} | 全局经验误差: {emp_risk:.4f} | 真实 Gap: {true_cl_gap:.4f}")
-
+        print(f"-> 全局宏观测试误差: {pop_risk:.4f} | 全局宏观经验误差: {emp_risk:.4f} | 真实宏观 Gap: {true_cl_gap:.4f}")
         # 测算全局理论界限 & 越界修复
         print(f"正在测算 Task 0 到 Task {task_id} 的全局理论界限...")
         sum_mi, sum_sq, sum_bkl, sum_wei, sum_var = 0, 0, 0, 0, 0
